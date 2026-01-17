@@ -14,26 +14,34 @@
  * limitations under the License.
  */
 
-@file:Suppress("unused")
-
-package io.github.proify.lyricon.amprovider
-
-import android.util.Log
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
-import io.github.proify.lyricon.amprovider.parser.AppleSongParser
-
-object Test {
-    private const val TAG = "LyricDownloader"
-    private lateinit var classLoader: ClassLoader
-
-    fun initialize(classLoader: ClassLoader) {
-        this.classLoader = classLoader
-
-//        val clazz = $$"com.apple.android.music.ttml.javanative.TTMLParser$TTMLParserNative".toClass(
-//            Test.classLoader
-//        )
-//        val instance = XposedHelpers.newInstance(clazz)
+package io.github.proify.lyricon.amprovider///*
+// * Copyright 2026 Proify
+// *
+// * Licensed under the Apache License, Version 2.0 (the "License");
+// * you may not use this file except in compliance with the License.
+// * You may obtain a copy of the License at
+// *
+// *     http://www.apache.org/licenses/LICENSE-2.0
+// *
+// * Unless required by applicable law or agreed to in writing, software
+// * distributed under the License is distributed on an "AS IS" BASIS,
+// * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// * See the License for the specific language governing permissions and
+// * limitations under the License.
+// */
+//
+//@file:Suppress("unused")
+//
+//package io.github.proify.lyricon.amprovider
+//
+//import android.util.Log
+//import de.robv.android.xposed.XC_MethodHook
+//import de.robv.android.xposed.XposedHelpers
+//import io.github.proify.lyricon.amprovider.parser.AppleSongParser
+//
+//object Test {
+//    private const val TAG = "LyricDownloader"
+//    private lateinit var classLoader: ClassLoader
 //
 //        val songInfoPtr = XposedHelpers.callMethod(
 //            instance,
