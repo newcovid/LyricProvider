@@ -17,6 +17,7 @@
 package io.github.proify.lyricon.cmprovider.xposed
 
 import android.content.Context
+import android.util.Log
 import com.highcapable.yukihookapi.hook.log.YLog
 import io.github.proify.lyricon.provider.common.extensions.deflate
 import io.github.proify.lyricon.provider.common.extensions.inflate
@@ -29,14 +30,14 @@ import java.util.Locale
 /**
  * 歌词磁盘缓存管理器。
  */
-@Deprecated("不应该额外缓存一份歌曲，以网易云音乐的歌词缓存为准")
 object DiskSongCache {
     private var baseDir: File? = null
 
     fun initialize(context: Context) {
-        val lyriconDir = File(context.filesDir, "lyricon")
+        val lyriconDir = File(context.externalCacheDir, "lyricon")
         val locale = Locale.getDefault()
         baseDir = File(File(lyriconDir, "songs"), locale.toLanguageTag()).apply { mkdirs() }
+        Log.d("DiskSongCache", "baseDir=$baseDir")
     }
 
     /**
@@ -59,6 +60,7 @@ object DiskSongCache {
             }
             true
         }.getOrElse {
+            YLog.debug(baseDir)
             YLog.error(e = it)
             false
         }

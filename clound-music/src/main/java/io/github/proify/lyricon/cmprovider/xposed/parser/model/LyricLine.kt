@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-package io.github.proify.lyricon.cmprovider.xposed
+package io.github.proify.lyricon.cmprovider.xposed.parser.model
 
-import io.github.proify.lyricon.cmprovider.xposed.parser.model.LyricResponse
-import io.github.proify.lyricon.lyric.model.Song
-import kotlinx.serialization.Serializable
-
-@Serializable
-data class DiskSong(
-    var song: Song? = null,
-    var response: LyricResponse? = null
-)
+data class LyricLine(
+    override var start: Long = 0,
+    override var end: Long = 0,
+    override var duration: Long = 0,
+    var text: String? = null,
+    var words: List<LyricWord> = emptyList(),
+    var translation: String? = null,
+) : TimeRange

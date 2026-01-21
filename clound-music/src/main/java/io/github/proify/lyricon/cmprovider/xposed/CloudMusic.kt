@@ -27,13 +27,11 @@ import com.highcapable.yukihookapi.hook.log.YLog
 import io.github.proify.lyricon.cmprovider.xposed.Constants.APP_PACKAGE_NAME
 import io.github.proify.lyricon.cmprovider.xposed.Constants.ICON
 import io.github.proify.lyricon.cmprovider.xposed.PreferencesMonitor.PreferenceCallback
-import io.github.proify.lyricon.cmprovider.xposed.parser.LyricResponse
-import io.github.proify.lyricon.cmprovider.xposed.parser.toSong
+import io.github.proify.lyricon.cmprovider.xposed.parser.LyricParser
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.provider.LyriconProvider
 import io.github.proify.lyricon.provider.ProviderConstants
 import io.github.proify.lyricon.provider.ProviderLogo
-import io.github.proify.lyricon.provider.common.extensions.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -81,6 +79,7 @@ object CloudMusic : YukiBaseHooker(), LyricFileObserver.FileObserverCallback {
     }
 
     override fun onHook() {
+        YLog.debug("Hooking...")
         dexKitBridge = DexKitBridge.create(appInfo.sourceDir)
         preferencesMonitor = PreferencesMonitor(dexKitBridge!!, object : PreferenceCallback {
             override fun onTranslationOptionChanged(isTranslationSelected: Boolean) {
@@ -214,11 +213,11 @@ object CloudMusic : YukiBaseHooker(), LyricFileObserver.FileObserverCallback {
             if (rawFile != null && rawFile.exists()) {
                 runCatching {
                     val jsonString = rawFile.readText()
-                    val response = json.decodeFromString<LyricResponse>(jsonString)
+                    val response = LyricParser.parseResponse(jsonString)
                     val parsedSong = response.toSong()
 
                     // 保存到缓存以便下次快速读取
-                    //DiskSongCache.save(DiskSong(parsedSong, response))
+                    DiskSongCache.save(DiskSong(parsedSong, response))
 
                     // 如果解析结果有效，返回解析后的 Song
                     if (!parsedSong.lyrics.isNullOrEmpty() && !response.pureMusic) {
@@ -252,6 +251,7 @@ object CloudMusic : YukiBaseHooker(), LyricFileObserver.FileObserverCallback {
         YLog.debug(msg = "setSong: ${song.name} (lyrics: ${song.lyrics?.size ?: 0})")
         lastSong = song
         provider?.player?.setSong(song)
+
     }
 
     private fun startSyncAction() {

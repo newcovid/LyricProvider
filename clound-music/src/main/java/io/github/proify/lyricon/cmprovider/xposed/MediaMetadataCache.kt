@@ -54,18 +54,13 @@ object MediaMetadataCache {
     fun putAndGet(bizMusicMeta: Any): Metadata? {
         val javaClass = bizMusicMeta.javaClass
 
-        // 懒加载反射方法，提升后续调用性能
-        if (getIdMethod == null) {
-            runCatching {
-                getIdMethod = javaClass.getDeclaredMethod("getId").apply { makeAccessible() }
-                getMusicNameMethod =
-                    javaClass.getDeclaredMethod("getMusicName").apply { makeAccessible() }
-                getArtistsNameMethod =
-                    javaClass.getDeclaredMethod("getArtistsName").apply { makeAccessible() }
-                getDurationMethod =
-                    javaClass.getDeclaredMethod("getDuration").apply { makeAccessible() }
-            }
-        }
+        getIdMethod = javaClass.getDeclaredMethod("getId").apply { makeAccessible() }
+        getMusicNameMethod =
+            javaClass.getDeclaredMethod("getMusicName").apply { makeAccessible() }
+        getArtistsNameMethod =
+            javaClass.getDeclaredMethod("getArtistsName").apply { makeAccessible() }
+        getDurationMethod =
+            javaClass.getDeclaredMethod("getDuration").apply { makeAccessible() }
 
         val id = getIdMethod.invokeSafe(bizMusicMeta) as? Long ?: return null
         val musicName = getMusicNameMethod.invokeSafe(bizMusicMeta) as? String

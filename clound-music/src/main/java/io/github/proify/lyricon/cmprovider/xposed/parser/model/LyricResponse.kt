@@ -14,14 +14,19 @@
  * limitations under the License.
  */
 
-package io.github.proify.lyricon.cmprovider.xposed
+package io.github.proify.lyricon.cmprovider.xposed.parser.model
 
-import io.github.proify.lyricon.cmprovider.xposed.parser.model.LyricResponse
-import io.github.proify.lyricon.lyric.model.Song
+import io.github.proify.lyricon.cmprovider.xposed.parser.LyricParser
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class DiskSong(
-    var song: Song? = null,
-    var response: LyricResponse? = null
-)
+data class LyricResponse(
+    val lrc: String? = null,
+    val lrcTranslateLyric: String? = null,
+    val yrc: String? = null,
+    val yrcTranslateLyric: String? = null,
+    val pureMusic: Boolean = false,
+    val musicId: Long = 0,
+) {
+    fun toLyricInfo(): LyricInfo = LyricParser.toLyricInfo(this)
+}
