@@ -30,7 +30,6 @@ configure<ApplicationExtension> {
 
     signingConfigs {
         create("release") {
-            println("KEYSTORE_PATH: ${System.getenv("KEYSTORE_PATH")}")
             storeFile = file(System.getenv("KEYSTORE_PATH"))
             storePassword = System.getenv("KEYSTORE_PASSWORD")
             keyAlias = System.getenv("KEY_ALIAS")
