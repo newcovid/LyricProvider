@@ -71,14 +71,16 @@ jobs:
           find . -name "*.aab" -path "*/build/outputs/bundle/${{ env.BUILD_TYPE }}/*" -exec cp {} collected-apks/ \;
           
           echo "Collected files:"
-          ls -la collected-apks/
+          ls -lh collected-apks/
 
+      # 🎯 关键修改：上传不压缩的文件
       - name: Upload APKs to Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BUILD_TYPE }}-apks
           path: collected-apks/
           if-no-files-found: error
+          archive: false  # 🚫 不创建压缩包，直接上传文件
 
       - name: Cleanup
         if: always()
