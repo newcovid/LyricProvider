@@ -4,7 +4,6 @@
 <p align="center">
   <img src="https://img.shields.io/github/v/release/proify/LyricProvider?style=flat-square&color=blue" alt="release">
   <img src="https://img.shields.io/github/downloads/proify/LyricProvider/total?style=flat-square&color=orange" alt="downloads">
-  <img src="https://img.shields.io/github/actions/workflow/status/proify/LyricProvider/android.yml?style=flat-square" alt="Build Status">
   <img src="https://img.shields.io/github/license/proify/LyricProvider?style=flat-square" alt="license">
 </p>
 
