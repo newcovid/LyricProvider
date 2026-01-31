@@ -29,16 +29,18 @@ object MediaMetadataCache {
         }
     }
 
-    fun putAndGet(bizMusicMeta: Any): Metadata? {
+    fun put(bizMusicMeta: Any): Metadata? {
         val javaClass = bizMusicMeta.javaClass
 
-        getIdMethod = javaClass.getMethod("getId").apply { makeAccessible() }
-        getMusicNameMethod =
-            javaClass.getMethod("getMusicName").apply { makeAccessible() }
-        getArtistsNameMethod =
-            javaClass.getMethod("getArtistsName").apply { makeAccessible() }
-        getDurationMethod =
-            javaClass.getMethod("getDuration").apply { makeAccessible() }
+        if (getIdMethod == null) {
+            getIdMethod = javaClass.getMethod("getId").apply { makeAccessible() }
+            getMusicNameMethod =
+                javaClass.getMethod("getMusicName").apply { makeAccessible() }
+            getArtistsNameMethod =
+                javaClass.getMethod("getArtistsName").apply { makeAccessible() }
+            getDurationMethod =
+                javaClass.getMethod("getDuration").apply { makeAccessible() }
+        }
 
         val id = getIdMethod.invokeSafe(bizMusicMeta) as? Long ?: return null
         val musicName = getMusicNameMethod.invokeSafe(bizMusicMeta) as? String

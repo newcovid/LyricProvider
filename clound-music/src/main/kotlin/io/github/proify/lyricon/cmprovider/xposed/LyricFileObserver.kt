@@ -4,8 +4,6 @@
  * http://www.apache.org/licenses/LICENSE-2.0
  */
 
-@file:Suppress("unused")
-
 package io.github.proify.lyricon.cmprovider.xposed
 
 import android.content.Context
@@ -30,22 +28,24 @@ class LyricFileObserver(context: Context, callback: FileObserverCallback) {
                 override fun onEvent(event: Int, path: String?) {
                     if (path == null) return
 
-                val file = File(cacheDir, path)
-                if (!file.exists() || !file.isFile) return
-
-                callback.onFileChanged(event, file)
+                    val file = File(dir, path)
+                    if (file.isFile) callback.onFileChanged(event, file)
+                }
             }
         }
     }
 
-    fun start() = observers.forEach { it.startWatching() }
+    fun start() {
+        observers.forEach { it.startWatching() }
+    }
 
-    fun stop() = observers.forEach { it.stopWatching() }
+    fun stop() {
+        observers.forEach { it.stopWatching() }
+    }
 
-    fun getFile(id: String): File {
-        // 优先返回已存在的文件，否则默认指向第一个目录(Cache)
-        return watchDirs.map { File(it, id) }.firstOrNull { it.exists() }
-            ?: File(watchDirs.first(), id)
+    fun getFile(id: String): File? {
+        return watchDirs.map { File(it, id) }
+            .firstOrNull { it.isFile }
     }
 
     interface FileObserverCallback {
