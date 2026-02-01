@@ -67,8 +67,6 @@ object CloudMusic : YukiBaseHooker() {
         private var preferencesMonitor: PreferencesMonitor? = null
 
         fun onHook() {
-            if (processName != "com.netease.cloudmusic:play") return
-
             YLog.debug("Hooking, processName= $processName")
 
             dexKitBridge = DexKitBridge.create(appInfo.sourceDir)

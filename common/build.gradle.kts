@@ -18,7 +18,7 @@ configure<LibraryExtension> {
     }
 
     defaultConfig {
-        minSdk = 21
+        minSdk = 27
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
@@ -42,6 +42,11 @@ configure<LibraryExtension> {
 
 
 dependencies {
+    implementation(libs.yukihookapi.api)
+    implementation(libs.kavaref.core)
+    implementation(libs.kavaref.extension)
+    compileOnly(libs.xposed.api)
+
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.ktx)
     testImplementation(libs.junit)
