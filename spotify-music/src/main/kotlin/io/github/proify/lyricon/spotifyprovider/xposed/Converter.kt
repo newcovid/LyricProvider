@@ -12,7 +12,7 @@ import io.github.proify.lyricon.spotifyprovider.xposed.api.response.LyricRespons
 import io.github.proify.lyricon.spotifyprovider.xposed.api.response.LyricsData
 
 fun LyricResponse.toSong(id: String): Song {
-    val metadata = MediaMetadataCache.get(id)
+    val metadata = MetadataCache.get(id)
     val song = Song()
     song.id = id
     song.name = metadata?.title

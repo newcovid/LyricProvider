@@ -6,138 +6,74 @@
 
 package io.github.proify.lyricon.spotifyprovider.xposed.api
 
-import android.app.AndroidAppHelper
-import android.content.Context
-import io.github.proify.lyricon.spotifyprovider.xposed.api.response.LyricResponse
+import android.util.Log
 import kotlinx.serialization.json.Json
-import java.io.File
+import org.json.JSONObject
+import java.io.BufferedReader
 import java.io.IOException
 import java.net.HttpURLConnection
-import java.net.URI
-import java.util.Locale
-import java.util.concurrent.TimeUnit
+import java.net.URL
 
 object SpotifyApi {
-    private val CACHE_EXPIRATION_MILLIS = TimeUnit.HOURS.toMillis(24)
-    private const val MAX_RETRIES = 3
+
+    val keysRequired = arrayOf(
+        "authorization",
+        "client-token",
+        "user-agent",
+        "x-client-id"
+    )
+
+    private const val TAG = "SpotifyApi"
+    private const val BASE_URL = "https://guc3-spclient.spotify.com/color-lyrics/v2/track/"
 
     val headers = mutableMapOf<String, String>()
 
-    private val jsonParser: Json = Json {
+    val jsonParser = Json {
         ignoreUnknownKeys = true
-        isLenient = true
-        encodeDefaults = false
-        prettyPrint = true
         coerceInputValues = true
     }
 
     @Throws(Exception::class)
-    fun fetchLyricResponse(id: String): LyricResponse {
-        val rawJson = fetchRawLyric(id)
-        return jsonParser.decodeFromString<LyricResponse>(rawJson)
-    }
+    fun fetchRawLyric(id: String): String = performNetworkRequest(id)
 
     @Throws(Exception::class)
-    fun fetchRawLyric(id: String): String {
-        val context: Context? = AndroidAppHelper.currentApplication()
+    private fun performNetworkRequest(id: String): String {
+        val url = URL("$BASE_URL$id?vocalRemoval=false&clientLanguage=zh_CN&preview=false")
 
-        // 1. 请求前尝试读取未过期的缓存
-        val cachedData = Cache.readCachedLyric(context, id, maxAge = CACHE_EXPIRATION_MILLIS)
-        if (cachedData != null) {
-            return cachedData
-        }
-
-        // 2. 带有重试机制的网络请求
-        var lastException: Exception? = null
-
-        for (attempt in 1..MAX_RETRIES) {
-            try {
-                return performNetworkRequest(id, context)
-            } catch (e: NoFoundLyricException) {
-                // 如果是 404 或明确没歌词，没必要重试，直接抛出
-                throw e
-            } catch (e: Exception) {
-                lastException = e
-                // 如果还没到最后一次尝试，可以稍微等待或直接进入下次循环
-                if (attempt < MAX_RETRIES) {
-                    Thread.sleep(500L * attempt) // 简单的退避策略
-                    continue
-                }
-            }
-        }
-
-        // 3. 所有尝试都失败后的兜底：即使过期了也尝试读一下缓存
-        return Cache.readCachedLyric(context, id, maxAge = Long.MAX_VALUE)
-            ?: throw (lastException
-                ?: IOException("Failed to fetch lyric after $MAX_RETRIES attempts"))
-    }
-
-    /**
-     * 执行单次网络请求的具体逻辑
-     */
-    @Throws(Exception::class)
-    private fun performNetworkRequest(id: String, context: Context?): String {
-        val urlString = "https://spclient.wg.spotify.com/color-lyrics/v2/track/$id"
-        val url = URI.create(urlString).toURL()
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 8000
-            readTimeout = 8000
-            headers.forEach { (key, value) -> setRequestProperty(key, value) }
+            connectTimeout = 15_000
+            readTimeout = 15_000
             setRequestProperty("accept", "application/json")
             setRequestProperty("app-platform", "WebPlayer")
+            for (key in headers.keys) {
+                setRequestProperty(key, headers[key]!!)
+            }
         }
 
-        return try {
-            when (val responseCode = connection.responseCode) {
-                HttpURLConnection.HTTP_OK -> {
-                    val rawJson = connection.inputStream.bufferedReader().use { it.readText() }
-                    // 成功后写入缓存
-                    Cache.saveLyric(context, id, rawJson)
-                    rawJson
-                }
+        try {
+            val response = when (val status = connection.responseCode) {
+                HttpURLConnection.HTTP_OK ->
+                    connection.inputStream.bufferedReader().use(BufferedReader::readText)
 
-                HttpURLConnection.HTTP_INTERNAL_ERROR, HttpURLConnection.HTTP_NOT_FOUND ->
-                    throw NoFoundLyricException(id, "Lyric not found for $id")
+                HttpURLConnection.HTTP_NOT_FOUND ->
+                    throw NoFoundLyricException(id, "No lyric found for $id")
 
-                else -> throw IOException("HTTP Error: $responseCode")
+                else -> throw IOException("HTTP error code: $status, msg: ${connection.responseMessage}")
             }
+
+            return try {
+                JSONObject(response)
+                response
+            } catch (e: Exception) {
+                Log.e(TAG, "Invalid JSON response for $id: $response", e)
+                throw IOException("Invalid JSON response")
+            }
+        } catch (e: IOException) {
+            Log.e(TAG, "Error fetching lyric for $id", e)
+            throw e
         } finally {
             connection.disconnect()
         }
-    }
-
-    private object Cache {
-        fun readCachedLyric(context: Context?, id: String, maxAge: Long): String? {
-            if (context == null) return null
-            val cacheFile = getCacheFile(context, id)
-            if (!cacheFile.exists()) return null
-
-            val lastModified = cacheFile.lastModified()
-            val now = System.currentTimeMillis()
-
-            return if (now - lastModified < maxAge) {
-                cacheFile.readText()
-            } else {
-                null
-            }
-        }
-
-        fun saveLyric(context: Context?, id: String, rawJson: String) {
-            if (context == null) return
-            val cacheFile = getCacheFile(context, id)
-            try {
-                cacheFile.parentFile?.mkdirs()
-                cacheFile.writeText(rawJson)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        private fun getCacheFile(context: Context, id: String) =
-            File(getCacheDirectory(context), "$id.json")
-
-        private fun getCacheDirectory(context: Context) =
-            File(File(context.cacheDir, "lyricon_lyric"), Locale.getDefault().toLanguageTag())
     }
 }

@@ -6,9 +6,7 @@
 
 package io.github.proify.lyricon.spotifyprovider.xposed
 
-import io.github.proify.lyricon.spotifyprovider.xposed.api.response.LyricResponse
-
 interface DownloadCallback {
-    fun onDownloadFinished(id: String, response: LyricResponse)
+    fun onDownloadFinished(id: String, response: String)
     fun onDownloadFailed(id: String, e: Exception)
 }

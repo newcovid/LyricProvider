@@ -9,7 +9,7 @@ package io.github.proify.lyricon.spotifyprovider.xposed
 import android.media.MediaMetadata
 import kotlinx.serialization.Serializable
 
-object MediaMetadataCache {
+object MetadataCache {
     private val map = mutableMapOf<String, Metadata>()
 
     fun save(metadata: MediaMetadata): Metadata? {

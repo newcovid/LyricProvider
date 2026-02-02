@@ -8,8 +8,6 @@ package io.github.proify.lyricon.spotifyprovider.xposed
 
 import android.media.MediaMetadata
 import android.media.session.PlaybackState
-import android.os.Handler
-import android.os.Looper
 import com.highcapable.kavaref.KavaRef.Companion.resolve
 import com.highcapable.yukihookapi.hook.core.YukiMemberHookCreator
 import com.highcapable.yukihookapi.hook.entity.YukiBaseHooker
@@ -22,6 +20,7 @@ import io.github.proify.lyricon.provider.ProviderLogo
 import io.github.proify.lyricon.provider.common.extensions.toPairMap
 import io.github.proify.lyricon.spotifyprovider.xposed.api.NoFoundLyricException
 import io.github.proify.lyricon.spotifyprovider.xposed.api.SpotifyApi
+import io.github.proify.lyricon.spotifyprovider.xposed.api.SpotifyApi.jsonParser
 import io.github.proify.lyricon.spotifyprovider.xposed.api.response.LyricResponse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,30 +30,27 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.lang.reflect.Method
+import java.util.Locale
 
 object Spotify : YukiBaseHooker(), DownloadCallback {
-
     private const val TAG = "SpotifyProvider"
-    private var isPlaying = false
     private var lyriconProvider: LyriconProvider? = null
-    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
-    private val pauseRunnable = Runnable { applyPlaybackUpdate(false) }
-    private var trackId: String? = null
 
-    private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private var isPlaying = false
+    private var trackId: String? = null
+    private var lastSong: Song? = null
 
     private var playerState: Any? = null
     private var positionMethod: Method? = null
     private var positionResult: YukiMemberHookCreator.MemberHookCreator.Result? = null
     private var positionJob: Job? = null
+    private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     override fun onHook() {
         YLog.debug(tag = TAG, msg = "正在注入进程: $processName")
 
         onAppLifecycle {
-            onCreate {
-                initProvider()
-            }
+            onCreate { initProvider() }
         }
         hookMediaSession()
         hookOkHttp()
@@ -66,7 +62,6 @@ object Spotify : YukiBaseHooker(), DownloadCallback {
         positionJob = coroutineScope.launch {
             while (isActive && isPlaying) {
                 val position = readPosition()
-                // YLog.debug(tag = TAG, msg = "Position: $position")
                 lyriconProvider?.player?.setPosition(position)
                 delay(ProviderConstants.DEFAULT_POSITION_UPDATE_INTERVAL)
             }
@@ -117,17 +112,10 @@ object Spotify : YukiBaseHooker(), DownloadCallback {
             .hook {
                 after {
                     val arg = args[0] as? Array<*> ?: return@after
-                    val map = arg.toPairMap()
-
-                    map.forEach { (key, value) ->
-                        when (key) {
-                            "Authorization" -> SpotifyApi.headers["authorization"] = value
-                            "client-token" -> SpotifyApi.headers["client-token"] = value
-                            "user-agent" -> SpotifyApi.headers["user-agent"] = value
-                            "spotify-app-version" -> SpotifyApi.headers["spotify-app-version"] =
-                                value
-
-                            "x-client-id" -> SpotifyApi.headers["x-client-id"] = value
+                    arg.toPairMap().forEach { (key, value) ->
+                        val keyLowercase = key.lowercase(Locale.ENGLISH)
+                        if (keyLowercase in SpotifyApi.keysRequired) {
+                            SpotifyApi.headers[keyLowercase] = value
                         }
                     }
                 }
@@ -162,39 +150,52 @@ object Spotify : YukiBaseHooker(), DownloadCallback {
             }.hook {
                 after {
                     val metadata = args[0] as? MediaMetadata ?: return@after
-                    val data = MediaMetadataCache.save(metadata) ?: return@after
-                    val (id, title, artist) = data
 
-                    if (id.isBlank()) {
-                        YLog.info(
-                            tag = TAG,
-                            msg = "Invalid track id: $id, name: $title, artist: $artist"
-                        )
+                    val data = MetadataCache.save(metadata)
+
+                    if (data == null) {
+
+                        //处理其它通知（比如广告）
+                        val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
+                        val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                        if (title.isNotBlank() || artist.isNotBlank()) {
+                            YLog.info(tag = TAG, msg = "Invalid track info, using title and artist")
+                            setPlaceholder(title, artist)
+                        }
+
                         return@after
                     }
+
+                    val id = data.id
                     if (id == this@Spotify.trackId) return@after
                     this@Spotify.trackId = id
 
-                    setSong(Song(id, title, artist))
-                    onTrackIdChanged(id)
+                    onTrackIdChanged(data)
                 }
             }
         }
     }
 
-    private fun onTrackIdChanged(trackId: String) {
-        Downloader.download(trackId, this)
+    private fun setPlaceholder(title: String?, artist: String?) {
+        setSong(Song(name = title, artist = artist))
+    }
+
+    private fun onTrackIdChanged(data: Metadata) {
+        val (id, title, artist) = data
+        val cache = appContext?.let { DiskCache.get(it, id) }
+        if (cache != null) {
+            applyResponse(id, cache)
+            return
+        }
+
+        setPlaceholder(title, artist)
+        Downloader.download(id, this)
     }
 
     private fun dispatchPlaybackState(state: Int) {
-        mainHandler.removeCallbacks(pauseRunnable)
-
         when (state) {
             PlaybackState.STATE_PLAYING -> applyPlaybackUpdate(true)
-            PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED -> mainHandler.postDelayed(
-                pauseRunnable,
-                0
-            )
+            PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED -> applyPlaybackUpdate(false)
         }
     }
 
@@ -205,27 +206,33 @@ object Spotify : YukiBaseHooker(), DownloadCallback {
 
         lyriconProvider?.player?.setPlaybackState(playing)
 
-        if (playing) {
-            startPositionSync()
-        } else {
-            stopPositionSync()
+        if (playing) startPositionSync() else stopPositionSync()
+    }
+
+    override fun onDownloadFinished(id: String, response: String) {
+        applyResponse(id, response)
+        appContext?.let { DiskCache.put(it, id, response) }
+    }
+
+    private fun applyResponse(id: String, response: String) {
+        val lyricResponse =
+            runCatching { jsonParser.decodeFromString<LyricResponse>(response) }.getOrNull()
+        if (lyricResponse != null) {
+            val song = lyricResponse.toSong(id)
+            if (song != lastSong) setSong(song)
         }
-    }
-
-    override fun onDownloadFinished(id: String, response: LyricResponse) {
-        val song = response.toSong(id)
-        setSong(song)
-    }
-
-    private fun setSong(song: Song) {
-        lyriconProvider?.player?.setSong(song)
     }
 
     override fun onDownloadFailed(id: String, e: Exception) {
         if (e is NoFoundLyricException) {
-            YLog.debug(tag = TAG, msg = "No lyric found for $id")
-            return
+            YLog.debug(tag = TAG, msg = e.message)
+        } else {
+            YLog.error(tag = TAG, msg = "Failed to fetch lyric for $id", e = e)
         }
-        YLog.error(tag = TAG, msg = "Failed to fetch lyric for $id", e = e)
+    }
+
+    private fun setSong(song: Song) {
+        lastSong = song
+        lyriconProvider?.player?.setSong(song)
     }
 }

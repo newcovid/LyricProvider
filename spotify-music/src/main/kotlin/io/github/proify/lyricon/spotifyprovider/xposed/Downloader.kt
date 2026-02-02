@@ -26,7 +26,7 @@ object Downloader {
 
         return scope.launch {
             try {
-                val response = SpotifyApi.fetchLyricResponse(id)
+                val response = SpotifyApi.fetchRawLyric(id)
                 downloadCallback.onDownloadFinished(id, response)
             } catch (e: Exception) {
                 downloadCallback.onDownloadFailed(id, e)
