@@ -17,7 +17,9 @@ fun LyricResponse.toSong(id: String): Song {
     song.id = id
     song.name = metadata?.title
     song.artist = metadata?.artist
-    song.duration = metadata?.duration ?: 0
+    song.duration = (metadata?.duration ?: 0).run {
+        if (this <= 0L) Long.MAX_VALUE else this
+    }
     song.lyrics = lyrics.toLyrics()
     return song
 }
