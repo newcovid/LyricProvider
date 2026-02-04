@@ -65,6 +65,10 @@ object PowerAmp {
     @Volatile
     private var lastPlaybackState: PlaybackState? = null
 
+    // 暂存的 Intent：用于处理“应用刚启动收到粘性广播但 MediaSession 尚未就绪”的情况
+    @Volatile
+    private var pendingTrackIntent: Intent? = null
+
     // 使用 SupervisorJob 确保子协程失败不会取消整个 Scope
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var progressJob: Job? = null
@@ -166,8 +170,11 @@ object PowerAmp {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 runCatching {
+                    // 获取是否为粘性广播（仅在 onReceive 中有效）
+                    val isSticky = isInitialStickyBroadcast
+                    
                     when (intent.action) {
-                        ACTION_TRACK_CHANGED -> handleTrackChange(intent)
+                        ACTION_TRACK_CHANGED -> handleTrackChange(intent, isSticky)
                         ACTION_STATUS_CHANGED -> handleStatusChange(intent)
                     }
                 }.onFailure {
@@ -187,6 +194,18 @@ object PowerAmp {
         val isPlaying = state.state == PlaybackState.STATE_PLAYING
         provider?.player?.setPlaybackState(isPlaying)
 
+        // 【修复逻辑 2/2】状态激活检查
+        // 当 MediaSession 状态变为活跃（播放或暂停）时，如果之前有被拦截的粘性广播，现在补发
+        if (isPlaybackActive(state)) {
+            val pending = pendingTrackIntent
+            if (pending != null) {
+                YLog.debug("状态已激活，补发挂起的切歌事件")
+                // 补发时不再视为 sticky，强制处理
+                handleTrackChange(pending, isSticky = false)
+                pendingTrackIntent = null
+            }
+        }
+
         if (isPlaying) {
             startSyncAction()
         } else {
@@ -195,6 +214,24 @@ object PowerAmp {
             if (currentPos >= 0) {
                 provider?.player?.setPosition(currentPos)
             }
+        }
+    }
+
+    /**
+     * 判断当前播放状态是否属于“活跃”状态 (播放或暂停，而非停止/错误)
+     * 用于区分用户正常打开 App 和后台服务静默重启
+     */
+    private fun isPlaybackActive(state: PlaybackState?): Boolean {
+        if (state == null) return false
+        return when (state.state) {
+            PlaybackState.STATE_PLAYING,
+            PlaybackState.STATE_PAUSED,
+            PlaybackState.STATE_BUFFERING,
+            PlaybackState.STATE_FAST_FORWARDING,
+            PlaybackState.STATE_REWINDING,
+            PlaybackState.STATE_SKIPPING_TO_NEXT,
+            PlaybackState.STATE_SKIPPING_TO_PREVIOUS -> true
+            else -> false // STATE_STOPPED, STATE_NONE, STATE_ERROR, STATE_CONNECTING
         }
     }
 
@@ -235,7 +272,18 @@ object PowerAmp {
         return max(0L, rawPos + LATENCY_COMPENSATION)
     }
 
-    private fun handleTrackChange(intent: Intent) {
+    private fun handleTrackChange(intent: Intent, isSticky: Boolean) {
+        // 【修复逻辑 1/2】粘性广播拦截
+        // 如果是粘性广播（App/Service 刚启动收到），且当前 MediaSession 尚未处于活跃状态
+        // 则认为是后台复活，暂不处理，存入 pendingTrackIntent 等待状态激活
+        if (isSticky && !isPlaybackActive(lastPlaybackState)) {
+            YLog.debug("检测到后台复活 (Sticky广播且状态非活跃)，挂起切歌事件")
+            pendingTrackIntent = intent
+            return
+        }
+        // 如果不是 Sticky，或者已经是活跃状态，则立即清除挂起 Intent (新的覆盖旧的)
+        pendingTrackIntent = null
+
         val bundle = intent.extras ?: return
         val title = bundle.getString("title") ?: "Unknown"
         val artist = bundle.getString("artist") ?: "Unknown"
