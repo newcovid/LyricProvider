@@ -160,6 +160,7 @@ object CloudProvider : YukiBaseHooker(), DownloadCallback {
     }
 
     private fun dispatchPlaybackState(state: Int) {
+        YLog.debug(tag = TAG, msg = "Playback state: $state")
         when (state) {
             PlaybackState.STATE_PLAYING -> applyPlaybackUpdate(true)
             PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED -> applyPlaybackUpdate(false)

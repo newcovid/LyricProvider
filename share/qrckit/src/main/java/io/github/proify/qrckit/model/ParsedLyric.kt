@@ -70,17 +70,17 @@ data class ParsedLyric(
 
     private val lrcDocument: LrcDocument by lazy {
         val raw = lyricsRaw
-        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parseLrc(raw)
+        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parse(raw)
     }
 
     private val translationData: LrcDocument by lazy {
         val raw = translationRaw
-        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parseLrc(raw)
+        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parse(raw)
     }
 
     private val lrcRomaData: LrcDocument by lazy {
         val raw = romaRaw
-        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parseLrc(raw)
+        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parse(raw)
     }
 
     /**

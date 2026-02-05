@@ -30,8 +30,8 @@ fun List<LyricLine>.toRichLines(
 ): List<RichLyricLine> {
 
     // 预将辅助歌词解析为 TreeMap，Key 为开始时间戳
-    val transMap = transLrc?.let { LrcParser.parseLrc(it).lines.toTreeMap() }
-    val romaMap = romaLrc?.let { LrcParser.parseLrc(it).lines.toTreeMap() }
+    val transMap = transLrc?.let { LrcParser.parse(it).lines.toTreeMap() }
+    val romaMap = romaLrc?.let { LrcParser.parse(it).lines.toTreeMap() }
 
     return this.map { line ->
         RichLyricLine(

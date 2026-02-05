@@ -40,10 +40,14 @@ include(":share:cloudlyric")
 
 include(":apple-music")
 include(":clound-music")
+
+//腾讯系
 include(":qq-music")
 include(":kugou-music")
 include(":kuwo-music")
+
 include(":spotify-music")
+
 include(":lx-music")
-include(":youtube-music")
+include(":cloud-provider")
 include(":poweramp-music")
