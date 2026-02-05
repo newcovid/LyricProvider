@@ -1,401 +1,344 @@
+/*
+ * Copyright 2026 Proify, Tomakino
+ * Licensed under the Apache License, Version 2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
+ */
+
 package io.github.proify.lyricon.paprovider.xposed
 
-import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.session.PlaybackState
-import android.os.Build
+import android.net.Uri
 import android.os.SystemClock
-import com.highcapable.yukihookapi.hook.factory.method
-import com.highcapable.yukihookapi.hook.factory.prefs
+import androidx.core.content.ContextCompat
+import com.highcapable.kavaref.KavaRef.Companion.resolve
+import com.highcapable.yukihookapi.hook.entity.YukiBaseHooker
 import com.highcapable.yukihookapi.hook.log.YLog
-import com.highcapable.yukihookapi.hook.param.PackageParam
-import com.highcapable.yukihookapi.hook.type.java.UnitType
+import com.kyant.taglib.TagLib
+import io.github.proify.cloudlyric.ProviderLyrics
+import io.github.proify.lrckit.EnhanceLrcParser
 import io.github.proify.lyricon.lyric.model.Song
-import io.github.proify.lyricon.paprovider.ui.Config
-import io.github.proify.lyricon.provider.ConnectionListener
+import io.github.proify.lyricon.paprovider.bridge.BridgeConstants
+import io.github.proify.lyricon.paprovider.bridge.Configs
+import io.github.proify.lyricon.paprovider.xposed.PowerAmp.lastPlaybackState
+import io.github.proify.lyricon.paprovider.xposed.PowerAmp.onDownloadFinished
+import io.github.proify.lyricon.paprovider.xposed.util.SafUriResolver
 import io.github.proify.lyricon.provider.LyriconFactory
 import io.github.proify.lyricon.provider.LyriconProvider
 import io.github.proify.lyricon.provider.ProviderConstants
 import io.github.proify.lyricon.provider.ProviderLogo
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.util.Collections
-import java.util.WeakHashMap
-import kotlin.math.max
 
-/**
- * PowerAmp Hook 核心逻辑
- *
- * 负责监听 PowerAmp 的广播和状态变化，并同步给 Lyricon 服务。
- */
-object PowerAmp {
+object PowerAmp : YukiBaseHooker(), DownloadCallback {
+    private const val TAG = "PowerAmpProvider"
     private const val ACTION_TRACK_CHANGED = "com.maxmpz.audioplayer.TRACK_CHANGED"
     private const val ACTION_STATUS_CHANGED = "com.maxmpz.audioplayer.STATUS_CHANGED"
 
-    /**
-     * [延迟补偿]
-     * PowerAmp 的音频输出路径通常比 MediaSession 报告的进度滞后。
-     * -380ms 是经验值，用于对齐歌词与人声。
-     */
-    private const val LATENCY_COMPENSATION = -380L
-
     private var provider: LyriconProvider? = null
 
-    // 使用 Volatile 确保多线程下的可见性，防止竞态条件
-    @Volatile
-    private var lastPath: String? = null
-    @Volatile
-    private var lastId: Long = 0L
-
-    // 内存黑名单：记录导致严重崩溃的歌曲 ID，避免无限循环尝试
-    private val errorBlacklist = Collections.synchronizedSet(Collections.newSetFromMap(WeakHashMap<String, Boolean>()))
-
-    // 保存 Application Context
-    private var appContext: Context? = null
-
-    @Volatile
     private var lastPlaybackState: PlaybackState? = null
+    private var curMetadata: TrackMetadata? = null
 
-    // 暂存的 Intent：用于处理“应用刚启动收到粘性广播但 MediaSession 尚未就绪”的情况
-    @Volatile
-    private var pendingTrackIntent: Intent? = null
-
-    // 使用 SupervisorJob 确保子协程失败不会取消整个 Scope
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var progressJob: Job? = null
+    private var receiver: BroadcastReceiver? = null
 
-    // 用于追踪当前的歌词搜索任务，以便切歌时取消旧任务
-    private var searchJob: Job? = null
+    /** 用于匹配音频标签中歌词字段的正则 */
+    private val lyricTagRegex by lazy { Regex("(?i)\\b(LYRICS)\\b") }
 
-    fun hook(packageParam: PackageParam) {
-        packageParam.apply {
-            findClass("android.app.Application").hook {
-                injectMember {
-                    method { name = "onCreate"; emptyParam() }
-                    afterHook {
-                        runCatching {
-                            init(instance as Application)
-                        }.onFailure {
-                            YLog.error("PowerAmp Hook 初始化严重失败", it)
-                        }
-                    }
-                }
+    override fun onHook() {
+        onAppLifecycle {
+            onCreate {
+                initDataChannel()
+                setupLyriconProvider(this)
+                setupBroadcastReceiver(this)
             }
+            onTerminate { release() }
+        }
+        hookMediaSession()
+    }
 
-            findClass("android.media.session.MediaSession").hook {
-                injectMember {
-                    method {
-                        name = "setPlaybackState"
-                        param(PlaybackState::class.java)
-                        returnType = UnitType
-                    }
-                    afterHook {
-                        runCatching {
-                            val state = args[0] as? PlaybackState ?: return@afterHook
-                            lastPlaybackState = state
-                            syncPlaybackState(state)
-                        }.onFailure {
-                            YLog.error("同步播放状态失败", it)
-                        }
-                    }
-                }
-            }
+    private fun initDataChannel() {
+        val channel = dataChannel
+        channel.wait(key = BridgeConstants.ACTION_SETTING_CHANGED) {
+            YLog.info(tag = TAG, msg = "Received setting change")
+            updateSettings()
         }
     }
 
-    private fun init(context: Context) {
-        this.appContext = context
-        YLog.debug("PowerAmp Hook 初始化中...")
-        
-        // 安全初始化 LyricUtil
-        try {
-            LyricUtil.init(context)
-        } catch (t: Throwable) {
-            YLog.error("LyricUtil 初始化失败", t)
-        }
+    private fun updateSettings() {
+        val isTranslationEnabled = prefs.get(Configs.ENABLE_TRANSLATION)
+        provider?.player?.setDisplayTranslation(isTranslationEnabled)
+    }
 
-        try {
-            provider = LyriconFactory.createProvider(
-                context = context,
-                providerPackageName = Constants.PROVIDER_PACKAGE_NAME,
-                playerPackageName = context.packageName,
-                logo = ProviderLogo.fromSvg(Constants.ICON)
-            )
+    private fun hookMediaSession() {
+        "android.media.session.MediaSession".toClass()
+            .resolve()
+            .apply {
+                firstMethod {
+                    name = "setPlaybackState"
+                    parameters(PlaybackState::class.java)
+                }.hook {
+                    after {
+                        val state = args[0] as? PlaybackState ?: return@after
+                        lastPlaybackState = state
 
-            // 根据用户配置设置翻译开关
-            val isTranslationEnabled = context.prefs().get(Config.ENABLE_TRANSLATION)
-            YLog.debug("初始化配置 - 翻译显示: $isTranslationEnabled")
-            provider?.player?.setDisplayTranslation(isTranslationEnabled)
-
-            provider?.service?.addConnectionListener(object : ConnectionListener {
-                override fun onConnected(provider: LyriconProvider) {
-                    YLog.debug("Lyricon 服务: 已连接")
-                    lastPlaybackState?.let { syncPlaybackState(it) }
+                        if (state.state == PlaybackState.STATE_PLAYING) {
+                            startSyncPositionTask()
+                        } else if (state.state == PlaybackState.STATE_PAUSED
+                            || state.state == PlaybackState.STATE_STOPPED
+                        ) {
+                            stopSyncPositionTask()
+                        }
+                    }
                 }
+            }
+    }
 
-                override fun onDisconnected(provider: LyriconProvider) {
-                    YLog.debug("Lyricon 服务: 已断开")
-                    stopSyncAction()
-                }
+    /**
+     * 释放资源，取消所有正在运行的任务。
+     */
+    private fun release() {
+        stopSyncPositionTask()
+        coroutineScope.cancel()
+        receiver?.let { appContext?.unregisterReceiver(it) }
+        receiver = null
+    }
 
-                override fun onReconnected(provider: LyriconProvider) {
-                    YLog.debug("Lyricon 服务: 已重连")
-                    lastPlaybackState?.let { syncPlaybackState(it) }
-                }
+    /**
+     * 配置并注册 [LyriconProvider]。
+     *
+     * @param context 上下文
+     */
+    private fun setupLyriconProvider(context: Context) {
+        provider = LyriconFactory.createProvider(
+            context = context,
+            providerPackageName = Constants.PROVIDER_PACKAGE_NAME,
+            playerPackageName = context.packageName,
+            logo = ProviderLogo.fromSvg(Constants.ICON)
+        )
+        updateSettings()
+        provider?.register()
+    }
 
-                override fun onConnectTimeout(provider: LyriconProvider) {
-                    YLog.error("Lyricon 服务: 连接超时")
-                }
-            })
-            provider?.register()
-        } catch (e: Throwable) {
-            // 捕获 Throwable 防止 SDK 初始化导致宿主崩溃
-            YLog.error("SDK 初始化失败", e)
-        }
-
+    /**
+     * 注册 PowerAmp 自定义广播接收器。
+     *
+     * @param context 上下文
+     */
+    private fun setupBroadcastReceiver(context: Context) {
         val filter = IntentFilter().apply {
             addAction(ACTION_TRACK_CHANGED)
             addAction(ACTION_STATUS_CHANGED)
         }
 
-        val receiver = object : BroadcastReceiver() {
+        receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                runCatching {
-                    // 获取是否为粘性广播（仅在 onReceive 中有效）
-                    val isSticky = isInitialStickyBroadcast
-                    
-                    when (intent.action) {
-                        ACTION_TRACK_CHANGED -> handleTrackChange(intent, isSticky)
-                        ACTION_STATUS_CHANGED -> handleStatusChange(intent)
-                    }
-                }.onFailure {
-                    YLog.error("广播处理异常: ${intent.action}", it)
+                when (intent.action) {
+                    ACTION_TRACK_CHANGED -> handleTrackChange(intent)
+                    ACTION_STATUS_CHANGED -> handleStatusChange(intent)
                 }
             }
-        }
-
-        if (Build.VERSION.SDK_INT >= 33) {
-            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            context.registerReceiver(receiver, filter)
+        }.also {
+            ContextCompat.registerReceiver(context, it, filter, ContextCompat.RECEIVER_EXPORTED)
         }
     }
 
-    private fun syncPlaybackState(state: PlaybackState) {
-        val isPlaying = state.state == PlaybackState.STATE_PLAYING
-        provider?.player?.setPlaybackState(isPlaying)
-
-        // 【修复逻辑 2/2】状态激活检查
-        // 当 MediaSession 状态变为活跃（播放或暂停）时，如果之前有被拦截的粘性广播，现在补发
-        if (isPlaybackActive(state)) {
-            val pending = pendingTrackIntent
-            if (pending != null) {
-                YLog.debug("状态已激活，补发挂起的切歌事件")
-                // 补发时不再视为 sticky，强制处理
-                handleTrackChange(pending, isSticky = false)
-                pendingTrackIntent = null
-            }
-        }
-
-        if (isPlaying) {
-            startSyncAction()
-        } else {
-            stopSyncAction()
-            val currentPos = calculateCurrentPosition()
-            if (currentPos >= 0) {
-                provider?.player?.setPosition(currentPos)
+    /**
+     * 开启进度同步任务。
+     */
+    private fun startSyncPositionTask() {
+        if (progressJob?.isActive == true) return
+        progressJob = coroutineScope.launch {
+            while (isActive) {
+                val position = calculateCurrentPosition()
+                provider?.player?.setPosition(position)
+                delay(ProviderConstants.DEFAULT_POSITION_UPDATE_INTERVAL)
             }
         }
     }
 
     /**
-     * 判断当前播放状态是否属于“活跃”状态 (播放或暂停，而非停止/错误)
-     * 用于区分用户正常打开 App 和后台服务静默重启
+     * 停止进度同步任务。
      */
-    private fun isPlaybackActive(state: PlaybackState?): Boolean {
-        if (state == null) return false
-        return when (state.state) {
-            PlaybackState.STATE_PLAYING,
-            PlaybackState.STATE_PAUSED,
-            PlaybackState.STATE_BUFFERING,
-            PlaybackState.STATE_FAST_FORWARDING,
-            PlaybackState.STATE_REWINDING,
-            PlaybackState.STATE_SKIPPING_TO_NEXT,
-            PlaybackState.STATE_SKIPPING_TO_PREVIOUS -> true
-            else -> false // STATE_STOPPED, STATE_NONE, STATE_ERROR, STATE_CONNECTING
-        }
-    }
-
-    private fun startSyncAction() {
-        if (progressJob?.isActive == true) return
-
-        progressJob = scope.launch {
-            while (isActive) {
-                try {
-                    val currentPos = calculateCurrentPosition()
-                    if (currentPos >= 0) {
-                        provider?.player?.setPosition(currentPos)
-                    }
-                    delay(ProviderConstants.DEFAULT_POSITION_UPDATE_INTERVAL)
-                } catch (e: Exception) {
-                    // 忽略进度更新的轻微异常
-                    delay(1000)
-                }
-            }
-        }
-    }
-
-    private fun stopSyncAction() {
+    private fun stopSyncPositionTask() {
         progressJob?.cancel()
         progressJob = null
     }
 
+    /**
+     * 根据 [lastPlaybackState] 快照推算当前实时位置。
+     *
+     * 计算逻辑：实时位置 = 快照位置 + (当前时间 - 快照产生时间) * 播放倍率
+     *
+     * @return 推算出的当前播放位置（毫秒）
+     */
     private fun calculateCurrentPosition(): Long {
-        val state = lastPlaybackState ?: return -1L
+        val state = lastPlaybackState ?: return 0L
+        if (state.state != PlaybackState.STATE_PLAYING) return state.position
 
-        var rawPos = state.position
-        if (state.state == PlaybackState.STATE_PLAYING && state.lastPositionUpdateTime > 0) {
-            val deltaTime = SystemClock.elapsedRealtime() - state.lastPositionUpdateTime
-            val speed = if (state.playbackSpeed > 0f) state.playbackSpeed else 1.0f
-            rawPos += (deltaTime * speed).toLong()
-        }
-
-        return max(0L, rawPos + LATENCY_COMPENSATION)
+        val elapsed = SystemClock.elapsedRealtime() - state.lastPositionUpdateTime
+        return state.position + (elapsed * state.playbackSpeed).toLong()
     }
 
-    private fun handleTrackChange(intent: Intent, isSticky: Boolean) {
-        // 【修复逻辑 1/2】粘性广播拦截
-        // 如果是粘性广播（App/Service 刚启动收到），且当前 MediaSession 尚未处于活跃状态
-        // 则认为是后台复活，暂不处理，存入 pendingTrackIntent 等待状态激活
-        if (isSticky && !isPlaybackActive(lastPlaybackState)) {
-            YLog.debug("检测到后台复活 (Sticky广播且状态非活跃)，挂起切歌事件")
-            pendingTrackIntent = intent
-            return
-        }
-        // 如果不是 Sticky，或者已经是活跃状态，则立即清除挂起 Intent (新的覆盖旧的)
-        pendingTrackIntent = null
-
+    /**
+     * 处理切歌广播。
+     *
+     * @param intent 包含轨道信息的 Intent
+     */
+    private fun handleTrackChange(intent: Intent) {
         val bundle = intent.extras ?: return
-        val title = bundle.getString("title") ?: "Unknown"
-        val artist = bundle.getString("artist") ?: "Unknown"
-        val path = bundle.getString("path")
-        val duration = bundle.getInt("duration", 0) * 1000L // 转为毫秒
-        val realId = bundle.getLong("id", 0L)
+        val metadata = TrackMetadataCache.save(bundle) ?: return
+        if (curMetadata == metadata) return
+        curMetadata = metadata
 
-        // 简单的去重逻辑
-        if (path == lastPath && realId == lastId && lastPath != null) {
-            return
-        }
-        
-        // 1. 立即取消上一首歌的搜索任务
-        searchJob?.cancel()
-        
-        YLog.debug(
-            """
-            >>>>> 检测到切歌 <<<<<
-            标题: $title
-            歌手: $artist
-            Real ID: $realId
-            路径: $path
-            时长: $duration ms
-            """.trimIndent()
-        )
+        val path = metadata.path ?: return
+        val resolvePath = resolvePowerampPath(path) ?: return
 
-        lastPath = path
-        lastId = realId
+        val uri = SafUriResolver.resolveToUri(appContext!!, resolvePath) ?: return
 
-        // 【修改点】切歌时实时刷新翻译开关状态
-        appContext?.let { ctx ->
-            val isEnabled = ctx.prefs().get(Config.ENABLE_TRANSLATION)
-            YLog.debug("刷新切歌配置 - 翻译显示: $isEnabled")
-            provider?.player?.setDisplayTranslation(isEnabled)
-        }
+        provider?.player?.setSong(Song(name = metadata.title, artist = metadata.artist))
 
-        val songId = path?.hashCode()?.toString() ?: realId.toString()
-
-        if (errorBlacklist.contains(songId)) {
-            YLog.warn("⚠️ 检测到该歌曲在黑名单中 (曾导致崩溃)，跳过歌词获取: $title")
-            return
-        }
-
-        val baseSong = Song(
-            id = songId,
-            name = title,
-            artist = artist,
-            duration = duration
-        )
-
-        // 立即发送歌曲信息（清除旧歌词）
-        provider?.player?.setSong(baseSong)
-
-        // 2. 启动新任务
-        searchJob = scope.launch {
-            try {
-                if (!isActive) return@launch
-
-                val lyricLines = LyricUtil.getLyricLines(
-                    rawPath = path,
-                    title = title,
-                    artist = artist,
-                    duration = duration
-                )
-
-                // 3. 一致性检查：防止网络延迟导致旧歌词覆盖新歌
-                if (!isActive) {
-                    // 注意：如果是取消异常，通常不会执行到这里，而是直接跳到 catch
-                    YLog.debug("🛑 任务非活跃，停止处理: $title")
-                    return@launch
-                }
-
-                // 双重校验：确保当前全局的歌曲仍然是发请求时的那首
-                val currentGlobalPath = lastPath
-                val currentGlobalId = lastId
-                val isStillCurrentSong = (path == currentGlobalPath) && (realId == currentGlobalId)
-
-                if (!isStillCurrentSong) {
-                    YLog.debug("🚫 忽略已过期的歌词结果: $title (当前播放: $currentGlobalPath)")
-                    return@launch
-                }
-
-                if (!lyricLines.isNullOrEmpty()) {
-                    baseSong.lyrics = lyricLines
-                    provider?.player?.setSong(baseSong)
-                    YLog.debug("✅ 歌词已更新并发送。行数: ${lyricLines.size}")
-                } else {
-                    YLog.debug("⚪ 最终未找到任何歌词: $title")
-                }
-            } catch (e: CancellationException) {
-                // 4. 正确处理取消：不记录 Error，不加黑名单
-                YLog.debug("⚠️ 搜索任务已取消: $title (用户可能切歌了)")
-            } catch (t: Throwable) {
-                // 5. 仅处理真正的异常
-                errorBlacklist.add(songId)
-                YLog.error("❌❌❌ 加载歌词时发生严重崩溃! 已将歌曲加入黑名单。原因: ${t.javaClass.simpleName} - ${t.message}", t)
-                t.printStackTrace()
+        YLog.debug(tag = TAG, msg = "Trying to set song from $path")
+        val success = setSongFromUri(metadata, uri)
+        if (!success) {
+            val isEnableNetSearch = prefs.get(Configs.ENABLE_NET_SEARCH)
+            if (isEnableNetSearch) {
+                YLog.debug(tag = TAG, msg = "Trying to search lyric from net")
+                setSongFromNet(metadata)
+            } else {
+                YLog.debug(tag = TAG, msg = "No lyric found in $path")
             }
         }
     }
 
-    private fun handleStatusChange(intent: Intent) {
-        val paused = intent.getBooleanExtra("paused", true)
-        val isPlaying = !paused
-        YLog.debug("播放状态变更: 暂停=$paused, 播放中=$isPlaying")
+    /**
+     * 从网络搜索歌词并设置给提供者。
+     *
+     * @param metadata 轨道元数据
+     *
+     * @see [onDownloadFinished]
+     */
+    private fun setSongFromNet(metadata: TrackMetadata) {
 
+        Downloader.search(metadata, this) {
+            trackName = metadata.title
+            artistName = metadata.artist
+            albumName = metadata.album
+        }
+    }
+
+    /**
+     * 从指定的 URI 读取并解析歌词，随后更新提供者。
+     *
+     * @param data 轨道元数据
+     * @param uri 文件的 SAF URI
+     */
+    private fun setSongFromUri(data: TrackMetadata, uri: Uri): Boolean {
+        val startTime = System.currentTimeMillis()
+        val lyric = matchLyric(uri) ?: run {
+            YLog.debug(tag = TAG, msg = "No lyric found in $uri")
+            return false
+        }
+
+        val lines = EnhanceLrcParser.parse(lyric, data.duration).lines.filter {
+            !it.text.isNullOrBlank()
+        }
+
+        val song = Song(
+            id = data.id,
+            name = data.title,
+            artist = data.artist,
+            duration = data.duration,
+            lyrics = lines
+        )
+
+        provider?.player?.setSong(song)
+
+        YLog.debug(
+            tag = TAG,
+            msg = "Song updated. Match/Parse cost: ${System.currentTimeMillis() - startTime}ms"
+        )
+        return true
+    }
+
+    /**
+     * 通过 TagLib 从文件元数据中匹配歌词。
+     *
+     * @param uri 文件 URI
+     * @return 匹配到的歌词字符串，未找到则返回 null
+     */
+    private fun matchLyric(uri: Uri): String? = try {
+        appContext?.contentResolver?.openFileDescriptor(uri, "r")?.use { pfd ->
+            TagLib.getMetadata(pfd.dup().detachFd())?.let { metadata ->
+                metadata.propertyMap.entries.firstOrNull { (key, _) ->
+                    lyricTagRegex.matches(key)
+                }?.value?.firstOrNull()
+            }
+        }
+    } catch (e: Exception) {
+        YLog.error(tag = TAG, msg = "Match lyric failed: $uri", e = e)
+        null
+    }
+
+    /**
+     * 解析 Poweramp 相对路径。
+     * 例如: `primary/Music/Jay.flac` -> `primary:Music/Jay.flac`
+     *
+     * @param path 原始路径字符串
+     * @return 解析后的 SAF 兼容路径格式
+     */
+    private fun resolvePowerampPath(path: String): String? {
+        val trimmed = path.trim()
+        if (trimmed.isEmpty() || trimmed.startsWith("/")) return null
+
+        val firstSlash = trimmed.indexOf('/')
+        if (firstSlash == -1) return null
+
+        val volumeId = trimmed.substring(0, firstSlash)
+        val relativePath = trimmed.substring(firstSlash + 1)
+
+        return if (volumeId.isNotEmpty()) "$volumeId:$relativePath" else null
+    }
+
+    /**
+     * 处理 PowerAmp 状态变化广播（备用状态同步）。
+     *
+     * @param intent 包含状态信息的 Intent
+     */
+    private fun handleStatusChange(intent: Intent) {
+        val isPlaying = !intent.getBooleanExtra("paused", true)
         provider?.player?.setPlaybackState(isPlaying)
 
-        if (isPlaying) {
-            startSyncAction()
-        } else {
-            stopSyncAction()
+        // 确保在手动暂停/播放时，如果 MediaSession Hook 未及时触发，仍能管理 Job
+        if (isPlaying) startSyncPositionTask() else stopSyncPositionTask()
+    }
+
+    override fun onDownloadFinished(metadata: TrackMetadata, response: List<ProviderLyrics>) {
+        if (metadata == curMetadata) {
+            val lines = response.firstOrNull()?.lyrics?.rich
+            val song = Song(
+                id = metadata.id,
+                name = metadata.title,
+                artist = metadata.artist,
+                duration = metadata.duration,
+                lyrics = lines
+            )
+            provider?.player?.setSong(song)
         }
+    }
+
+    override fun onDownloadFailed(metadata: TrackMetadata, e: Exception) {
+        YLog.error(tag = TAG, msg = "Download failed $e", e = e)
     }
 }

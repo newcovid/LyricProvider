@@ -68,7 +68,7 @@ class LrcLibProvider : LyricsProvider {
                         trackName = it.trackName,
                         artistName = it.artistName,
                         albumName = it.albumName,
-                        rich = LrcParser.parseLrc(it.syncedLyrics ?: "").lines.toRichLines(),
+                        rich = LrcParser.parse(it.syncedLyrics ?: "").lines.toRichLines(),
                         instrumental = it.instrumental,
                     )
                 }

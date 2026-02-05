@@ -59,7 +59,9 @@ data class ParsedLyric(
                 end = line.end,
                 duration = line.duration,
                 text = line.text,
-                translation = findBestMatch(line.begin, transIndex),
+                translation = findBestMatch(line.begin, transIndex).takeUnless {
+                    it?.trim() == "//"
+                },
                 roma = findBestMatch(line.begin, romaIndex),
                 words = line.words
             )
@@ -70,17 +72,17 @@ data class ParsedLyric(
 
     private val lrcDocument: LrcDocument by lazy {
         val raw = lyricsRaw
-        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parseLrc(raw)
+        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parse(raw)
     }
 
     private val translationData: LrcDocument by lazy {
         val raw = translationRaw
-        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parseLrc(raw)
+        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parse(raw)
     }
 
     private val lrcRomaData: LrcDocument by lazy {
         val raw = romaRaw
-        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parseLrc(raw)
+        if (raw.isNullOrBlank()) LrcDocument() else LrcParser.parse(raw)
     }
 
     /**

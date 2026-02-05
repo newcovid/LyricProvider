@@ -1,6 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~ Copyright 2026 Proify, Tomakino
+  ~ Licensed under the Apache License, Version 2.0
+  ~ http://www.apache.org/licenses/LICENSE-2.0
+  -->
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
         android:allowBackup="true"
@@ -10,11 +14,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LyricProvider">
 
-        <!-- 注册设置页面 Activity，并设为启动入口 -->
         <activity
-            android:name=".ui.SettingsActivity"
+            android:name=".app.ui.SettingsActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:theme="@style/Theme.LyricProvider">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -47,15 +49,19 @@
         <meta-data
             android:name="lyricon_module"
             android:value="true" />
+
         <meta-data
             android:name="lyricon_module_author"
             android:value="@string/lyricon_module_author" />
+
         <meta-data
             android:name="lyricon_module_description"
             android:value="@string/lyricon_module_description" />
+
         <meta-data
             android:name="lyricon_module_category"
             android:value="@string/lyricon_module_category" />
+
         <meta-data
             android:name="lyricon_module_tags"
             android:resource="@array/lyricon_module_tags" />

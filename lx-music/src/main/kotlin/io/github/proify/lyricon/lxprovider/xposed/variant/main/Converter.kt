@@ -6,7 +6,7 @@
 
 package io.github.proify.lyricon.lxprovider.xposed.variant.main
 
-import io.github.proify.lrckit.LrcParser
+import io.github.proify.lrckit.EnhanceLrcParser
 import io.github.proify.lyricon.lyric.model.RichLyricLine
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.model.extensions.normalize
@@ -23,10 +23,10 @@ object Converter {
         translation: String? = null,
         roma: String? = null
     ): List<RichLyricLine> {
-        val main = LrcParser.parseLrc(lyric).lines
+        val main = EnhanceLrcParser.parse(lyric).lines
         val transMap =
-            translation?.let { LrcParser.parseLrc(it).lines.associateBy { l -> l.begin } }
-        val romaMap = roma?.let { LrcParser.parseLrc(it).lines.associateBy { l -> l.begin } }
+            translation?.let { EnhanceLrcParser.parse(it).lines.associateBy { l -> l.begin } }
+        val romaMap = roma?.let { EnhanceLrcParser.parse(it).lines.associateBy { l -> l.begin } }
 
         return main
             .filter { !it.text.isNullOrBlank() }

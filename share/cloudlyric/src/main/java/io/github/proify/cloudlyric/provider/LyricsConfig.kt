@@ -13,7 +13,7 @@ import io.github.proify.cloudlyric.provider.lrclib.LrcLibProvider
 import io.github.proify.cloudlyric.provider.qq.QQMusicProvider
 
 object LyricsConfig {
-    val ALL_PROVIDERS: List<LyricsProvider> = mutableListOf(
+    val ALL_PROVIDERS: List<LyricsProvider> = listOf(
         QQMusicProvider(),
         LrcLibProvider()
     )
