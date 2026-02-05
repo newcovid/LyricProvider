@@ -17,5 +17,3 @@
 .externalNativeBuild
 .cxx
 local.properties
-
-/.outputs
