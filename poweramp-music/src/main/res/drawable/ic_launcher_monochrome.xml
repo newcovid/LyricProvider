@@ -10,10 +10,10 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="0.7764706"
-        android:scaleY="0.7764706"
-        android:translateX="12.070588"
-        android:translateY="12.070588">
+        android:scaleX="0.76"
+        android:scaleY="0.76"
+        android:translateX="12.96"
+        android:translateY="12.96">
 
         <!-- 为了防止图标过大被系统裁切，缩放并居中 -->
         <group
@@ -37,5 +37,5 @@
                 android:strokeColor="@color/ic_launcher_foreground"
                 android:strokeLineJoin="round" />
         </group>
-  </group>
+    </group>
 </vector>

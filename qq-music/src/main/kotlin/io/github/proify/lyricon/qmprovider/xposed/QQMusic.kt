@@ -91,7 +91,7 @@ object QQMusic : YukiBaseHooker() {
      * 处理播放服务进程逻辑：核心 Hook 与 Lyricon 交互
      */
     private class PlayerProcessHook : DownloadCallback {
-        private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         private var positionUpdateJob: Job? = null
         private var lyriconProvider: LyriconProvider? = null
 

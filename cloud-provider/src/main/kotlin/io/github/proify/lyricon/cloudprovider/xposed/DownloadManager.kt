@@ -6,23 +6,34 @@
 
 package io.github.proify.lyricon.cloudprovider.xposed
 
+import android.annotation.SuppressLint
 import io.github.proify.cloudlyric.CloudLyrics
 import io.github.proify.cloudlyric.SearchOptions
+import io.github.proify.cloudlyric.provider.lrclib.LrcLibProvider
 import io.github.proify.cloudlyric.provider.qq.QQMusicProvider
+import io.github.proify.lyricon.common.extensions.isChinese
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 object DownloadManager {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    @SuppressLint("ConstantLocale")
     val cloudLyrics = CloudLyrics(
-        listOf(
-            QQMusicProvider(),
-            //   LrcLibProvider() //LRCLIB 比较慢
-        )
+        if (Locale.getDefault().isChinese()) {
+            listOf(
+                QQMusicProvider()
+            )
+        } else {
+            listOf(
+                LrcLibProvider()
+            )
+        }
     )
 
     private var currentTask: Job? = null

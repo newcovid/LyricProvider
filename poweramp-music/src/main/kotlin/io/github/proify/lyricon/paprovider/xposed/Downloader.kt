@@ -8,10 +8,12 @@
 
 package io.github.proify.lyricon.paprovider.xposed
 
+import android.annotation.SuppressLint
 import io.github.proify.cloudlyric.CloudLyrics
 import io.github.proify.cloudlyric.SearchOptions
 import io.github.proify.cloudlyric.provider.lrclib.LrcLibProvider
 import io.github.proify.cloudlyric.provider.qq.QQMusicProvider
+import io.github.proify.lyricon.common.extensions.isChinese
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,8 +23,10 @@ import java.util.Locale
 object Downloader {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    @SuppressLint("ConstantLocale")
     val cloudLyrics = CloudLyrics(
-        if (isChineseEnvironment()) {
+        if (Locale.getDefault().isChinese()) {
             listOf(
                 QQMusicProvider()
             )
@@ -46,10 +50,5 @@ object Downloader {
                 downloadCallback.onDownloadFailed(metadata, e)
             }
         }
-    }
-
-    fun isChineseEnvironment(): Boolean {
-        val locale = Locale.getDefault()
-        return locale.language.equals("zh", ignoreCase = true)
     }
 }

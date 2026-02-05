@@ -230,7 +230,6 @@ object PowerAmp : YukiBaseHooker(), DownloadCallback {
      * @see [onDownloadFinished]
      */
     private fun setSongFromNet(metadata: TrackMetadata) {
-
         Downloader.search(metadata, this) {
             trackName = metadata.title
             artistName = metadata.artist
@@ -299,7 +298,7 @@ object PowerAmp : YukiBaseHooker(), DownloadCallback {
      * @return 解析后的 SAF 兼容路径格式
      */
     private fun resolvePowerampPath(path: String): String? {
-        val trimmed = path.trim()
+        val trimmed = path.trimStart()
         if (trimmed.isEmpty() || trimmed.startsWith("/")) return null
 
         val firstSlash = trimmed.indexOf('/')

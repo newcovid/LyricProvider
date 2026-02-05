@@ -13,20 +13,12 @@ import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
 @InjectYukiHookWithXposed(modulePackageName = Constants.PROVIDER_PACKAGE_NAME)
 open class HookEntry : IYukiHookXposedInit {
 
-    override fun onHook() {
+    override fun onHook() =
         YukiHookAPI.encase {
             loadApp(Constants.SALT_PLAYER_PACKAGE_NAME, SaltPlayer)
         }
-    }
 
-    override fun onInit() {
-        super.onInit()
-        YukiHookAPI.configs {
-            debugLog {
-                tag = "SaltPlayerProvider"
-                isEnable = true
-                elements(TAG, PRIORITY, PACKAGE_NAME, USER_ID)
-            }
-        }
+    override fun onInit() = YukiHookAPI.configs {
+        debugLog { tag = "SaltPlayerProvider" }
     }
 }
