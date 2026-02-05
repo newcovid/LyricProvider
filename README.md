@@ -21,8 +21,8 @@
 
 | 平台              | 状态      | 下载                                                                                     | 说明               |
 |:----------------|:--------|----------------------------------------------------------------------------------------|:-----------------|
-| **Apple Music** | 🟢 稳定   | [查看](https://github.com/proify/LyricProvider/releases/latest#:~:text=apple)            | 支持动态歌词/翻译        |
-| **网易云音乐**       | 🟢 稳定   | [查看](https://github.com/proify/LyricProvider/releases/latest#:~:text=clound,-music)    | 支持动态歌词/翻译        |
+| **Apple Music** | 🟢 稳定   | [查看](https://github.com/proify/LyricProvider/releases/latest#:~:text=apple%2Dmusic)    | 支持动态歌词/翻译        |
+| **网易云音乐**       | 🟢 稳定   | [查看](https://github.com/proify/LyricProvider/releases/latest#:~:text=clound%2Dmusic)   | 支持动态歌词/翻译        |
 | **QQ音乐**        | 🟢 稳定   | [查看](https://github.com/proify/LyricProvider/releases/latest#:~:text=qq%2Dmusic)       | 支持动态歌词/翻译        |
 | **光锥音乐**        | 🟢稳定    | [查看](https://coneplayer.trantor.ink/)                                                  | 由开发者适配           |
 | **LX音乐**        | 🟢稳定    | [查看](https://github.com/proify/LyricProvider/releases/latest#:~:text=lx%2Dmusic)       | 支持翻译             |
@@ -34,7 +34,7 @@
 | 🎸 **更多平台**     | 🛠️ 开发中 | 无                                                                                      | 欢迎提交 PR 适配更多 App |
 
 ---
-https://github.com/proify/LyricProvider/releases/latest?refresh=1#:~:text=apple-music
+
 ## 📥 安装指南
 
 > [!IMPORTANT]
