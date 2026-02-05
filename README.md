@@ -34,7 +34,7 @@
 | 🎸 **更多平台**     | 🛠️ 开发中 | 无                                                                                      | 欢迎提交 PR 适配更多 App |
 
 ---
-
+https://github.com/proify/LyricProvider/releases/latest?refresh=1#:~:text=apple-music
 ## 📥 安装指南
 
 > [!IMPORTANT]
