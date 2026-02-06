@@ -73,6 +73,7 @@ object Spotify : YukiBaseHooker(), DownloadCallback {
         positionJob = null
     }
 
+    //待优化，但目前不想写代码
     private fun readPosition(): Long {
         return try {
             val any = positionMethod?.invoke(playerState, System.currentTimeMillis())
